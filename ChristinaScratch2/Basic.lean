@@ -198,6 +198,11 @@ def BSet.mul (X Y : BSet) : BSet where
 
   dec a b :=
     match a, b with
-    | bit _, _ => isFalse by
-    | _, bit _ => isFalse _
-    | a₁ -:- a₂, b₁ -:- b₂ => _
+    | bit _, _ => isFalse (by simp)
+    | _, bit _ => isFalse (by simp)
+    | a₁ -:- a₂, b₁ -:- b₂ =>
+      if h : X.eq a₁ b₁ ∧ Y.eq a₂ b₂
+      then isTrue (by simp; exact h)
+      else isFalse (by simp at *; exact h)
+
+instance : HasBinaryProducts BSet :=
