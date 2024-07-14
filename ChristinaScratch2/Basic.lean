@@ -15,20 +15,41 @@ structure BSet where
   eq : Data → Data → Bool
   symm : Symmetric (eq · ·)
   trans : Transitive (eq · ·)
-  cotrans : ∀ x y, eq x y = false → ∀ z, eq x z = false ∨ eq y z = false
-  dec : DecidableRel (eq · ·)
+  cotrans : ∀ {x y}, eq x y = false → ∀ z, eq x z = false ∨ eq y z = false
 
-def BSet.defined (x : Data) (s : BSet) : Prop := s.eq x x
+def BSet.def (X : BSet) (x : Data) : Prop := X.eq x x
+
+instance : DecidablePred (BSet.def X) := λ d =>
+  if h : X.eq d d
+    then isTrue h
+    else isFalse h
+
+theorem BSet.def_of_eq_right {X : BSet} (a_eq_b : X.eq a b) : X.def b :=
+  not_not.mp <| λ b_not_def ↦ by
+    simp [BSet.def] at *
+    have b_ne_a := X.cotrans b_not_def a
+    rw [or_self] at *
+    rw [X.symm a_eq_b] at b_ne_a
+    · cases b_ne_a
 
 -- This suffices to show that it both takes defined to defined,
 -- and equal to equal.
-structure BSetFun (dom cod : BSet) where
-  toFun : Data → Data
-  welldefined : ∀ {x y}, dom.eq x y → cod.eq (toFun x) (toFun y)
+abbrev BSetFun (dom cod : BSet) :=
+  { f : Data → Data
+  // ∀ {x y}, dom.eq x y → cod.eq (f x) (f y)
+  }
+
+instance : FunLike (BSetFun dom cod) Data Data where
+  coe f := f.val
+  coe_injective' := by
+    intros x y h
+    ext
+    simp at h
+    rw [h]
 
 def BSetFun.comp {X Y Z} (f : BSetFun X Y) (g : BSetFun Y Z) : BSetFun X Z := {
-    toFun := g.toFun ∘ f.toFun
-    welldefined := g.welldefined ∘ f.welldefined
+    val := g.val ∘ f.val
+    property := g.property ∘ f.property
   }
 
 theorem BSetFun.assoc
@@ -41,12 +62,12 @@ theorem BSetFun.assoc
 def BSetFun.equiv {dom cod : BSet}
   (f : BSetFun dom cod)
   (g : BSetFun dom cod) : Prop :=
-  ∀ {x y}, dom.eq x y → cod.eq (f.toFun x) (g.toFun y)
+  ∀ {x y}, dom.eq x y → cod.eq (f x) (g y)
 
 instance BSetFun.setoid dom cod : Setoid (BSetFun dom cod) where
   r := BSetFun.equiv
   iseqv :=
-    ⟨ λ f _ _ x_eq_y => f.welldefined x_eq_y
+    ⟨ λ f _ _ x_eq_y => f.property x_eq_y
     , by
       intros f g f_eq_g x y x_eq_y
       apply cod.symm
@@ -78,8 +99,8 @@ open CategoryTheory
 instance : CategoryStruct BSet where
   Hom := BSetHom
   id _X := BSetHom.mk {
-    toFun := id
-    welldefined := λ h ↦ h
+    val := id
+    property := λ h ↦ h
   }
   comp := BSetHom.comp
 
@@ -108,16 +129,15 @@ instance : OfNat BSet 0 where
     eq := λ _x _y => False
     symm := λ x y h => by cases h
     trans := λ x y z h => by cases h
-    cotrans := λ x y _ z =>
+    cotrans := λ {x y} _ z =>
       Or.inl <| by
       simp at *
-    dec := λ x y => isFalse (by simp)
   }
 
 instance : Unique ((0 : BSet) ⟶ Y) where
   default := ⟦ {
-    toFun := id
-    welldefined := λ h => by cases h
+    val := id
+    property := λ h => by cases h
   } ⟧
   uniq f := by
     induction f using Quotient.ind
@@ -132,14 +152,13 @@ instance : OfNat BSet 1 where
     eq := λ _x _y => true
     symm := λ x y _h => rfl
     trans := λ x y z _h₁ _h₂ => rfl
-    cotrans := λ x y h z => by simp at h
-    dec := λ x y => isTrue (by simp)
+    cotrans := λ {x y} h z => by simp at h
   }
 
 instance : Unique (Y ⟶ (1 : BSet)) where
   default := ⟦ {
-    toFun := λ _ => Data.bit false
-    welldefined := λ _ => by simp [OfNat.ofNat]
+    val := λ _ => Data.bit false
+    property := λ _ => by simp [OfNat.ofNat]
   } ⟧
   uniq f := by
     induction f using Quotient.ind
@@ -174,35 +193,129 @@ def BSet.mul (X Y : BSet) : BSet where
       , z₁ -:- z₂ => by
         simp at *
         apply And.intro (X.trans a_eq_b.1 b_eq_c.1) (Y.trans a_eq_b.2 b_eq_c.2)
-  cotrans a b a_ne_b c :=
-    match c, a, b with
-    | bit _, _, _ => by simp
-    | _, bit _, _ => by simp
-    | _, _, bit _ => by simp
+  cotrans {a b} a_ne_b c :=
+    match c, a, b, a_ne_b with
+    | bit _, _, _, _ => by simp
+    | _, bit _, _, _  => by simp
+    | _, _, bit _, _  => by simp
     | c₁ -:- c₂
     , a₁ -:- a₂
-    , b₁ -:- b₂ => by
+    , b₁ -:- b₂
+    , a_ne_b =>
+      by
       simp at *
-      simp_rw [imp_iff_not_or, Bool.not_eq_true] at *
-      cases a_ne_b
-      case inl h₁ =>
-        have := X.cotrans _ _ h₁ c₁
-        cases this with
-        | inl h => simp_all only [true_or]
-        | inr h_1 => simp_all only [true_or, or_true]
-      case inr h₂ =>
-        have := Y.cotrans _ _ h₂ c₂
-        cases this with
-        | inl h => simp_all only [or_true, true_or]
-        | inr h_1 => simp_all only [or_true]
+      have h := imp_iff_not_or.mp a_ne_b
+      match h with
+      | .inl h₁ =>
+        rw [Bool.not_eq_true] at *
+        have := X.cotrans h₁ c₁
+        cases this
+        case inl h₂ =>
+          rw [h₂]
+          tauto
+        case inr h₂ =>
+          rw [h₂]
+          tauto
+      | .inr h₂ =>
+        have := Y.cotrans h₂ c₂
+        tauto
 
-  dec a b :=
-    match a, b with
-    | bit _, _ => isFalse (by simp)
-    | _, bit _ => isFalse (by simp)
-    | a₁ -:- a₂, b₁ -:- b₂ =>
-      if h : X.eq a₁ b₁ ∧ Y.eq a₂ b₂
-      then isTrue (by simp; exact h)
-      else isFalse (by simp at *; exact h)
+@[simp]
+def BSet.mul_eq_of_pair (X Y : BSet) :
+  (X.mul Y).eq (x₁ -:- y₁) (x₂ -:- y₂) ↔ (X.eq x₁ x₂) ∧ (Y.eq y₁ y₂) := by
+  simp [BSet.mul]
 
-instance : HasBinaryProducts BSet :=
+def BSet.mul_fst (X Y : BSet) : BSetHom (X.mul Y) X :=
+  BSetHom.mk
+    { val := λ d ↦
+      match d with
+      | x -:- _ => x
+      | _ => bit 0
+    , property := λ {x y} h => by
+        cases x
+        case bit => simp [mul] at h
+        case pair a₁ a₂ =>
+          cases y
+          case bit => simp [mul] at h
+          case pair b₁ b₂ =>
+            simp [mul] at *
+            apply h.1
+    }
+
+def BSet.mul_snd (X Y : BSet) : BSetHom (X.mul Y) Y :=
+  BSetHom.mk
+    { val := λ d ↦
+      match d with
+      | _ -:- y => y
+      | _ => bit 0
+    , property := λ {x y} h => by
+        cases x
+        case bit => simp [mul] at h
+        case pair a₁ a₂ =>
+          cases y
+          case bit => simp [mul] at h
+          case pair b₁ b₂ =>
+            simp [mul] at *
+            apply h.2
+    }
+
+open CategoryTheory.Limits
+
+def BSet.pair_cone_pi (A B : BSet)
+  : (Functor.const (Discrete WalkingPair)).obj (A.mul B) ⟶ Limits.pair A B where
+  app LR :=
+  match LR with
+  | ⟨.left⟩ => BSet.mul_fst A B
+  | ⟨.right⟩ => BSet.mul_snd A B
+  naturality LR₁ LR₂ f :=
+    have ⟨⟨h⟩⟩ := f
+    match LR₁, LR₂ with
+    | ⟨.left⟩,  ⟨.left⟩   => by simp
+    | ⟨.right⟩, ⟨.right⟩  => by simp
+    | ⟨.left⟩,  ⟨.right⟩  => by cases h
+    | ⟨.right⟩, ⟨.left⟩   => by cases h
+
+def BSet.pair_cone (X Y : BSet) : Cone (Limits.pair X Y) where
+  pt := BSet.mul X Y
+  π := BSet.pair_cone_pi X Y
+
+def BSetFun.lift_pi (getX : BSetFun pt X) (getY : BSetFun pt Y) : BSetFun pt (X.mul Y) where
+  val d := getX d -:- getY d
+  property := λ {d₁ d₂} d_eq => by
+    simp [BSet.mul]
+    exact ⟨getX.property d_eq, getY.property d_eq⟩
+
+def BSet.lift_pi (X Y : BSet) : (pt ⟶ X) → (pt ⟶ Y) → (pt ⟶ X.mul Y) := by
+  apply Quotient.map₂ BSetFun.lift_pi _
+  intros f₁ f₂ f_eq g₁ g₂ g_eq
+  intros a b h
+  have h₃ := BSet.def_of_eq_right h
+  apply BSet.trans (X.mul Y) (y := (BSetFun.lift_pi f₁ g₁).val b)
+  · apply (BSetFun.lift_pi f₁ g₁).property h
+  apply BSet.trans (X.mul Y) (y := (BSetFun.lift_pi f₁ g₂).val b)
+  · simp [BSetFun.lift_pi]
+    apply And.intro (f₁.property h₃) (g_eq h₃)
+  · simp [BSet.mul, BSetFun.lift_pi]
+    apply And.intro
+    · apply f_eq h₃
+    · apply g₂.property h₃
+
+def BSet.pair_limit_cone (X Y : BSet) : LimitCone (Limits.pair X Y) where
+  cone := BSet.pair_cone X Y
+  isLimit := {
+    lift := λ s => by
+      have ⟨pt, π⟩ := s
+      simp [BSet.pair_cone]
+      have ⟨a, b⟩ := π
+      have ⟨a₁, a₂⟩ := (a ⟨.left⟩, a ⟨.right⟩)
+      simp at a₁ a₂
+      apply BSetHom.mk
+      constructor
+      case F.val =>
+        exact
+  }
+
+
+instance : HasBinaryProducts BSet := by
+  have (X Y : BSet) : HasLimit (Limits.pair X Y) := {exists_limit := _}
+  apply hasBinaryProducts_of_hasLimit_pair
