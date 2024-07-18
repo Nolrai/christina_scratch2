@@ -285,7 +285,7 @@ def BSetFun.lift_pi (getX : BSetFun pt X) (getY : BSetFun pt Y) : BSetFun pt (X.
     simp [BSet.mul]
     exact ⟨getX.property d_eq, getY.property d_eq⟩
 
-def BSet.lift_pi (X Y : BSet) : (pt ⟶ X) → (pt ⟶ Y) → (pt ⟶ X.mul Y) := by
+def BSet.lift_pi {X Y : BSet} : (pt ⟶ X) → (pt ⟶ Y) → (pt ⟶ X.mul Y) := by
   apply Quotient.map₂ BSetFun.lift_pi _
   intros f₁ f₂ f_eq g₁ g₂ g_eq
   intros a b h
@@ -303,16 +303,25 @@ def BSet.lift_pi (X Y : BSet) : (pt ⟶ X) → (pt ⟶ Y) → (pt ⟶ X.mul Y) :
 def BSet.pair_limit_cone (X Y : BSet) : LimitCone (Limits.pair X Y) where
   cone := BSet.pair_cone X Y
   isLimit := {
-    lift := λ s => by
+    lift := λ s =>
       have ⟨pt, π⟩ := s
-      simp [BSet.pair_cone]
       have ⟨a, b⟩ := π
-      have ⟨a₁, a₂⟩ := (a ⟨.left⟩, a ⟨.right⟩)
-      simp at a₁ a₂
-      apply BSetHom.mk
-      constructor
-      case F.val =>
-        exact
+      have (aₗ, aᵣ) := (a ⟨.left⟩, a ⟨.right⟩)
+      BSet.lift_pi aₗ aᵣ
+    fac := by
+      intros s j
+      have ⟨pt, π⟩ := s
+      have ⟨a, b⟩ := π
+      have l_l : (⟨.left⟩ : Discrete WalkingPair) ⟶ ⟨.left⟩ := ⟨⟨rfl⟩⟩
+      have r_r : (⟨.right⟩ : Discrete WalkingPair) ⟶ ⟨.right⟩ := ⟨⟨rfl⟩⟩
+      have bₗ := (b l_l)
+      have bᵣ := (b r_r)
+      simp
+      simp [lift_pi]
+      rw [Functor.const_obj_map] at *
+      
+
+    uniq := _
   }
 
 
